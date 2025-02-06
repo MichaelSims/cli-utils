@@ -25,13 +25,13 @@ total_seconds=$(echo "$minutes * 60 + $seconds" | bc)
 
 # Determine if the command was a success or failure
 if [ "$command_status" -eq 0 ]; then
-  result="success"
+  result="succeeded"
 else
-  result="failure"
+  result="failed"
 fi
 
 # Use say to speak the wall clock duration and the result of the command
-say "The command took $total_seconds seconds to complete and ended in $result."
+say "The command $result in $total_seconds seconds." &
 
 # Clean up the temporary files
 rm "$temp_output" "$temp_output-status"
