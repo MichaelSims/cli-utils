@@ -1,0 +1,7 @@
+#!/bin/zsh
+
+function timed-say() {
+    command timed-say "$@"
+}
+
+compdef _precommand timed-say
