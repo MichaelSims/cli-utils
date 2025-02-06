@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+
+target_path="${1:-.}"
+
+find "$target_path" -type f \
+  \( \
+    -path "*/src/*/kotlin/*.kts" \
+    -o -path "*/src/*/kotlin/*.kt" \
+    -o -path "*/*.kts" \
+  \) \
+  ! -path '*/build/*'

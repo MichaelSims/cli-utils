@@ -4,4 +4,4 @@ set -e
 
 target_path="${1:-.}"
 
-gfind "$target_path" -type f \( -path "*/*.kts" -o -path "*/*.kt" -not -path "*/build/*/*.kts" -not -path "*/build/*/*.kt" \) -print0 | xargs -0 ktfmt --kotlinlang-style
+_ktfmt_select_files "$target_path" | tr '\n' '\0' | xargs -0 ktfmt --kotlinlang-style

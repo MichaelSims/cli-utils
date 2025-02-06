@@ -4,4 +4,4 @@ set -e
 
 target_path="${1:-.}"
 
-gfind "$target_path" -type f \( -path "*/src/*/kotlin/*.kts" -o -path "*/src/*/kotlin/*.kt" -o -path "*/src/*/java/**/*.kts" -o -path "*/src/*/java/**/*.kt" \) -print0 | xargs -0 ktfmt --kotlinlang-style -n --set-exit-if-changed
+_ktfmt_select_files "$target_path" | tr '\n' '\0' | xargs -0 ktfmt --kotlinlang-style -n --set-exit-if-changed
