@@ -1,0 +1,8 @@
+#!/bin/bash
+
+set -e
+
+script_base=$(basename "$0")
+temp_file="$(mktemp -t "$script_base").txt"
+cat - > "$temp_file"
+idea "$temp_file"

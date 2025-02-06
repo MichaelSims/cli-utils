@@ -1,0 +1,15 @@
+#!/bin/bash
+
+set -e
+
+if [ -z "$1" ]; then
+  echo "Error: No argument provided."
+  echo "Usage: $(basename "$0") <name of app config store>"
+  exit 1
+fi
+
+name="$1"
+
+output="$(mktemp -t "$name").jsonl"
+az appconfig kv export -n "$name" --auth-mode login --destination file -y --format json --path "$output"
+idea "$output"

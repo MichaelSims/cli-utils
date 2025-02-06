@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+set -e
+
+echo "$@" | perl -lne 'print "https://$2/$1/$3" if (/^abfss:\/\/(.*?)\@(.*?)\/(.*)/)'
