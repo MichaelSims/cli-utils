@@ -2,6 +2,9 @@
 
 # This was written by Copilot
 
+# Set TIMEFORMAT to output only real time in seconds with 3 decimal places
+TIMEFORMAT="%3R"
+
 # Temporary file to store the timing output
 temp_output=$(mktemp)
 
@@ -15,23 +18,62 @@ temp_output=$(mktemp)
 # Read the exit status
 command_status=$(cat "$temp_output-status")
 
-# Extract the real time duration from the output
-real_time=$(grep "real" "$temp_output" | awk '{print $2}')
+# Extract the time duration (it will be in seconds with 3 decimal places)
+duration_seconds=$(grep -v '[A-Za-z]' "$temp_output" | tail -n 1)
 
-# Convert the time format from m:ss to seconds
-minutes=$(echo "$real_time" | cut -d'm' -f1)
-seconds=$(echo "$real_time" | cut -d'm' -f2 | cut -d's' -f1)
-total_seconds=$(echo "$minutes * 60 + $seconds" | bc)
+# Format seconds to remove trailing zeros after decimal point
+formatted_seconds=$(echo "$duration_seconds" | sed 's/\\.0*$//;s/\\.\\([0-9]*[1-9]\\)0*$/.\\1/')
+
+# Calculate hours, minutes, and remaining seconds
+hours=$(echo "$duration_seconds / 3600" | bc)
+remaining_minutes=$(echo "($duration_seconds % 3600) / 60" | bc)
+remaining_seconds=$(echo "scale=3; $duration_seconds - ($hours * 3600) - ($remaining_minutes * 60)" | bc)
+
+# Build the duration string
+duration_string=""
+if [ "$(echo "$hours > 0" | bc)" -eq 1 ]; then
+    if [ "$(echo "$hours > 1" | bc)" -eq 1 ]; then
+        duration_string="$hours hours"
+    else
+        duration_string="1 hour"
+    fi
+fi
+
+if [ "$(echo "$remaining_minutes > 0" | bc)" -eq 1 ]; then
+    if [ -n "$duration_string" ]; then
+        if [ "$(echo "$remaining_minutes > 1" | bc)" -eq 1 ]; then
+            duration_string="$duration_string and $remaining_minutes minutes"
+        else
+            duration_string="$duration_string and 1 minute"
+        fi
+    else
+        if [ "$(echo "$remaining_minutes > 1" | bc)" -eq 1 ]; then
+            duration_string="$remaining_minutes minutes"
+        else
+            duration_string="1 minute"
+        fi
+    fi
+fi
+
+if [ "$(echo "$remaining_seconds > 0" | bc)" -eq 1 ] || [ -z "$duration_string" ]; then
+    # Format seconds to remove trailing zeros after decimal point
+    formatted_seconds=$(echo "$remaining_seconds" | sed 's/\\.0*$//;s/\\.\\([0-9]*[1-9]\\)0*$/.\\1/')
+    if [ -n "$duration_string" ]; then
+        duration_string="$duration_string and $formatted_seconds seconds"
+    else
+        duration_string="$formatted_seconds seconds"
+    fi
+fi
 
 # Determine if the command was a success or failure
 if [ "$command_status" -eq 0 ]; then
-  result="succeeded"
+    result="succeeded"
 else
-  result="failed"
+    result="failed"
 fi
 
 # Use say to speak the wall clock duration and the result of the command
-say "The command $result in $total_seconds seconds." &
+say "The command $result in $duration_string." &
 
 # Clean up the temporary files
 rm "$temp_output" "$temp_output-status"
