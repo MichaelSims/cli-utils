@@ -32,13 +32,33 @@ function timed-say() {
 
     # Build the duration string
     local duration_str=""
-    [[ $hours -gt 0 ]] && duration_str+="$hours hours "
-    [[ $minutes -gt 0 ]] && duration_str+="$minutes minutes "
+    if [[ $hours -gt 0 ]]; then
+        if [[ $hours -eq 1 ]]; then
+            duration_str+="1 hour "
+        else
+            duration_str+="$hours hours "
+        fi
+    fi
+    if [[ $minutes -gt 0 ]]; then
+        if [[ $minutes -eq 1 ]]; then
+            duration_str+="1 minute "
+        else
+            duration_str+="$minutes minutes "
+        fi
+    fi
     if [[ $seconds -gt 0 || $ms != "000" ]]; then
         if [[ $ms != "000" ]]; then
-            duration_str+="${seconds:-zero} point ${ms_formatted} seconds"
+            if [[ $seconds -eq 1 ]]; then
+                duration_str+="1 point ${ms_formatted} seconds"
+            else
+                duration_str+="${seconds:-zero} point ${ms_formatted} seconds"
+            fi
         else
-            duration_str+="${seconds:-zero} seconds"
+            if [[ $seconds -eq 1 ]]; then
+                duration_str+="1 second"
+            else
+                duration_str+="${seconds:-zero} seconds"
+            fi
         fi
     fi
 
