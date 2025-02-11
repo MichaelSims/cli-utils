@@ -4,4 +4,4 @@ set -e
 
 target_path="${1:-.}"
 
-_ktfmt_select_files "$target_path" | tr '\n' '\0' | xargs -0 ktfmt --kotlinlang-style
+_ktfmt_select_files "$target_path" | tr '\n' '\0' | xargs -0 ktfmt --kotlinlang-style --set-exit-if-changed
