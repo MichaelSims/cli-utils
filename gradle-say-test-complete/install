@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -e
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+GRADLE_INIT_DIR="${HOME}/.gradle/init.d"
+mkdir -p "${GRADLE_INIT_DIR}"
+
+cp "${SCRIPT_DIR}/sayTestComplete.init.gradle.kts" "${GRADLE_INIT_DIR}/"
+
+echo "Installed sayTestComplete.init.gradle.kts to ${GRADLE_INIT_DIR}"
