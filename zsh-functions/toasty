@@ -1,0 +1,95 @@
+#!/bin/zsh
+
+# This was written by Copilot.
+# It's a copy/paste of timed-say ... TODO fix this
+
+function toasty() {
+    # Get the directory where this script is located
+    local SCRIPT_DIR=${${(%):-%x}:A:h}
+    local SOUND_FILE="${SCRIPT_DIR}/../data/toasty.mp3"
+
+    # Check if sound file exists
+    if [[ ! -f "$SOUND_FILE" ]]; then
+        echo "Error: Sound file not found at $SOUND_FILE"
+        return 1
+    fi
+
+    # Start timing
+    local start=$EPOCHREALTIME
+
+    # Run the command
+    eval "$@"
+    local return_status=$?
+
+    # End timing
+    local end=$EPOCHREALTIME
+
+    # Calculate duration with exactly 3 decimal places
+    local duration
+    duration=$(printf "%.3f" $(( end - start )))
+
+    # Split into seconds and milliseconds
+    local seconds=${duration%.*}
+    local ms=${duration#*.}
+
+    # Calculate hours, minutes, remaining seconds
+    local hours=$(( seconds / 3600 ))
+    local minutes=$(( (seconds % 3600) / 60 ))
+    seconds=$(( seconds % 60 ))
+
+    # Format milliseconds as individual digits
+    local ms_formatted
+    ms_formatted=$(echo $ms | sed 's/\(.\)/\1 /g' | sed 's/ $//')
+
+    # Build the duration string
+    local duration_str=""
+    if [[ $hours -gt 0 ]]; then
+        if [[ $hours -eq 1 ]]; then
+            duration_str+="1 hour "
+        else
+            duration_str+="$hours hours "
+        fi
+    fi
+    if [[ $minutes -gt 0 ]]; then
+        if [[ $minutes -eq 1 ]]; then
+            duration_str+="1 minute "
+        else
+            duration_str+="$minutes minutes "
+        fi
+    fi
+    if [[ $seconds -gt 0 || $ms != "000" ]]; then
+        if [[ $ms != "000" ]]; then
+            if [[ $seconds -eq 1 ]]; then
+                duration_str+="1 point ${ms_formatted} seconds"
+            else
+                duration_str+="${seconds:-zero} point ${ms_formatted} seconds"
+            fi
+        else
+            if [[ $seconds -eq 1 ]]; then
+                duration_str+="1 second"
+            else
+                duration_str+="${seconds:-zero} seconds"
+            fi
+        fi
+    fi
+
+    # Trim any extra spaces
+    duration_str="${duration_str% }"
+
+    # If duration is zero with no milliseconds, just say "zero seconds"
+    [[ -z "$duration_str" ]] && duration_str="zero seconds"
+
+    # Build the complete message
+    local message
+    if (( return_status == 0 )); then
+        message="The command succeeded in $duration_str."
+    else
+        message="The command failed in $duration_str."
+    fi
+
+    # Speak the message
+    afplay "$SOUND_FILE"
+    (say "$message" &) >/dev/null 2>&1
+}
+
+compdef _precommand timed-say
