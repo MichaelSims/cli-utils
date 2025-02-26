@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# Written by Copilot (GPT-4o)
+
+# Check for --dry-run option
+DRY_RUN=false
+if [[ "$1" == "--dry-run" ]]; then
+  DRY_RUN=true
+fi
+
+# Find the latest IntelliJ IDEA directory
+SCRATCH_DIR=$(find "${HOME}/Library/Application Support/JetBrains" -maxdepth 1 -type d -name "IntelliJIdea*" | sort -r | head -n 1)/scratches
+
+# Check if the directory exists
+if [[ ! -d "$SCRATCH_DIR" ]]; then
+  echo "Scratch directory not found."
+  exit 1
+fi
+
+# Iterate through files that are direct children of the directory and start with "scratch"
+for file in "$SCRATCH_DIR"/scratch*; do
+  # Check if the file is a regular file
+  if [[ -f "$file" ]]; then
+    echo "File: $file"
+    start_line=1
+    while true; do
+      echo "Lines $start_line to $((start_line + 14)) of the file:"
+      sed -n "${start_line},$((start_line + 14))p" "$file"
+      start_line=$((start_line + 15))
+
+      # Prompt the user for action
+      while true; do
+        read -r -p "Do you want to delete, rename, or see more of this file? (d/delete, r/rename, m/more): " action
+
+        if [[ "$action" == "delete" || "$action" == "d" ]]; then
+          if [[ "$DRY_RUN" == true ]]; then
+            echo "Dry run: File would be deleted."
+          else
+            rm "$file"
+            echo "File deleted."
+          fi
+          break 2
+        elif [[ "$action" == "rename" || "$action" == "r" ]]; then
+          read -r -p "Enter the new name for the file: " new_name
+
+          # Get the file extension
+          extension="${file##*.}"
+
+          # Check if the new name has an extension
+          if [[ "$new_name" != *.* ]]; then
+            new_name="$new_name.$extension"
+          fi
+
+          if [[ "$DRY_RUN" == true ]]; then
+            echo "Dry run: File would be renamed to $new_name."
+          else
+            # Rename the file
+            mv "$file" "$SCRATCH_DIR/$new_name"
+            echo "File renamed to $new_name."
+          fi
+          break 2
+        elif [[ "$action" == "more" || "$action" == "m" ]]; then
+          if [[ $(wc -l < "$file") -le $((start_line - 1)) ]]; then
+            echo "End of file reached."
+            start_line=1
+          else
+            break
+          fi
+        else
+          echo "Invalid action. Please enter 'd/delete', 'r/rename', or 'm/more'."
+        fi
+      done
+    done
+  fi
+done
