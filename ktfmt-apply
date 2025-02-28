@@ -3,5 +3,14 @@
 set -e
 
 target_path="${1:-.}"
+max_retries=2
 
-_ktfmt_select_files "$target_path" | tr '\n' '\0' | xargs -0 ktfmt --kotlinlang-style --set-exit-if-changed
+run_ktfmt() {
+    _ktfmt_select_files "$target_path" | tr '\n' '\0' | xargs -0 ktfmt --kotlinlang-style --set-exit-if-changed
+}
+
+attempt=0
+until run_ktfmt || [ $attempt -ge $max_retries ]; do
+    ((attempt++))
+    echo "ktfmt made changes, applying again..."
+done
