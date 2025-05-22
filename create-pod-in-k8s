@@ -118,6 +118,10 @@ fi
 json='{}'
 
 # Add key-value pairs to the JSON object
+json=$(jq --arg pod_name "$pod_name" '.spec.containers[0].name = $pod_name' <<< "$json")
+json=$(jq --arg image "$image" '.spec.containers[0].image = $image' <<< "$json")
+json=$(jq '.spec.containers[0].stdin = true' <<< "$json")
+json=$(jq '.spec.containers[0].tty = true' <<< "$json")
 json=$(jq '.spec.tolerations[0].key = "dedicated"' <<< "$json")
 json=$(jq '.spec.tolerations[0].operator = "Equal"' <<< "$json")
 json=$(jq --arg initiative "$initiative" '.spec.tolerations[0].value = $initiative' <<< "$json")
@@ -147,6 +151,7 @@ fi
 kubectl_command=(
   kubectl run "$pod_name"
   --image="$image"
+  --rm
   --stdin --tty --restart=Never
   --overrides="$json"
 )
