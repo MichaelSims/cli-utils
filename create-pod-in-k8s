@@ -1,0 +1,170 @@
+#!/bin/bash
+
+set -e
+
+# Default values
+initiative="${CREATE_POD_IN_K8S_INITIATIVE:-standard}"
+volume_size="${CREATE_POD_IN_K8S_VOLUME_SIZE:-}"
+volume_name="${CREATE_POD_IN_K8S_VOLUME_NAME:-data}"
+requests_cpu="${CREATE_POD_IN_K8S_REQUESTS_CPU:-}"
+requests_memory="${CREATE_POD_IN_K8S_REQUESTS_MEMORY:-}"
+namespace="${CREATE_POD_IN_K8S_NAMESPACE:-}"
+image="${CREATE_POD_IN_K8S_IMAGE:-ubuntu}"
+pod_name="${CREATE_POD_IN_K8S_POD_NAME:-troubleshooter}"
+dry_run=false
+
+# Function to print usage
+print_usage() {
+  script_name=$(basename "$0")
+  echo "Usage: $script_name [options]"
+  echo
+  echo "Options:"
+  echo "  -i, --initiative <value>         Set the initiative (default: $initiative)"
+  echo "  --volume-size <value>            Set the volume size"
+  echo "  --requests-cpu <value>           Set the CPU requests"
+  echo "  --requests-memory <value>        Set the memory requests"
+  echo "  -n, --namespace <value>          Set the namespace"
+  echo "  --image <value>                  Set the image (default: $image)"
+  echo "  --pod-name <value>               Set the pod name (default: $pod_name)"
+  echo "  --dry-run                        Print the command without executing it"
+  echo "  -h, --help                       Show this help message and exit"
+  echo ""
+  echo "Many options can be supplied by env vars (example: CREATE_POD_IN_K8S_POD_NAME)."
+  echo "See script source for which ones can be supplied this way."
+}
+
+# Parse options
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    -i=*|--initiative=*)
+      initiative="${1#*=}"
+      shift
+      ;;
+    -i|--initiative)
+      initiative="$2"
+      shift 2
+      ;;
+    --volume-size=*)
+      volume_size="${1#*=}"
+      shift
+      ;;
+    --volume-size)
+      volume_size="$2"
+      shift 2
+      ;;
+    --requests-cpu=*)
+      requests_cpu="${1#*=}"
+      shift
+      ;;
+    --requests-cpu)
+      requests_cpu="$2"
+      shift 2
+      ;;
+    --requests-memory=*)
+      requests_memory="${1#*=}"
+      shift
+      ;;
+    --requests-memory)
+      requests_memory="$2"
+      shift 2
+      ;;
+    -n=*|--namespace=*)
+      namespace="${1#*=}"
+      shift
+      ;;
+    -n|--namespace)
+      namespace="$2"
+      shift 2
+      ;;
+    --image=*)
+      image="${1#*=}"
+      shift
+      ;;
+    --image)
+      image="$2"
+      shift 2
+      ;;
+    --pod-name=*)
+      pod_name="${1#*=}"
+      shift
+      ;;
+    --pod-name)
+      pod_name="$2"
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=true
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+# Capture remaining arguments
+args=("$@")
+
+# Default to /bin/bash if no arguments are supplied
+if [[ ${#args[@]} -eq 0 ]]; then
+  args=("/bin/bash")
+fi
+
+# Initialize an empty JSON object
+json='{}'
+
+# Add key-value pairs to the JSON object
+json=$(jq '.spec.tolerations[0].key = "dedicated"' <<< "$json")
+json=$(jq '.spec.tolerations[0].operator = "Equal"' <<< "$json")
+json=$(jq --arg initiative "$initiative" '.spec.tolerations[0].value = $initiative' <<< "$json")
+json=$(jq '.spec.tolerations[0].effect = "NoSchedule"' <<< "$json")
+json=$(jq --arg initiative "$initiative" '.spec.nodeSelector.initiative = $initiative' <<< "$json")
+
+# Add volumes section if --volume-size is supplied
+if [[ -n "$volume_size" ]]; then
+  json=$(jq --arg volume_name "$volume_name" '.spec.volumes[0].name = $volume_name' <<< "$json")
+  json=$(jq '.spec.volumes[0].ephemeral.volumeClaimTemplate.spec.accessModes[0] = "ReadWriteOnce"' <<< "$json")
+  json=$(jq '.spec.volumes[0].ephemeral.volumeClaimTemplate.spec.storageClassName = "managed"' <<< "$json")
+  json=$(jq --arg size "$volume_size" '.spec.volumes[0].ephemeral.volumeClaimTemplate.spec.resources.requests.storage = $size' <<< "$json")
+  json=$(jq --arg volume_name "$volume_name" '.spec.containers[0].volumeMounts[0].name = $volume_name' <<< "$json")
+  json=$(jq '.spec.containers[0].volumeMounts[0].mountPath = "/data"' <<< "$json")
+fi
+
+# Add CPU and memory requests if supplied
+if [[ -n "$requests_cpu" ]]; then
+  json=$(jq --arg cpu "$requests_cpu" '.spec.containers[0].resources.requests.cpu = $cpu' <<< "$json")
+fi
+
+if [[ -n "$requests_memory" ]]; then
+  json=$(jq --arg memory "$requests_memory" '.spec.containers[0].resources.requests.memory = $memory' <<< "$json")
+fi
+
+# Construct the kubectl command as an array
+kubectl_command=(
+  kubectl run "$pod_name"
+  --image="$image"
+  --stdin --tty --restart=Never
+  --overrides="$json"
+)
+
+# Add namespace if supplied
+if [[ -n "$namespace" ]]; then
+  kubectl_command+=(-n "$namespace")
+fi
+
+# Add the remaining arguments
+kubectl_command+=(-- "${args[@]}")
+
+# Print command (and execute unless --dry-run was supplied)
+if [[ "$dry_run" == true ]]; then
+  printf "Would execute command: %s\n" "${kubectl_command[*]}"
+  exit 0
+else
+  printf "Executing command: %s\n" "${kubectl_command[*]}"
+  # Execute the kubectl command
+  "${kubectl_command[@]}"
+fi
