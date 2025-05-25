@@ -21,7 +21,7 @@ print_usage() {
   echo
   echo "Options:"
   echo "  -i, --initiative <value>            Set the initiative (default: $initiative)"
-  echo "  --volume-size <value>               Set the volume size"
+  echo "  -v, --volume-size <value>           Set the volume size"
   echo "  -c, --requests-cpu <value>          Set the CPU requests"
   echo "  -m, --requests-memory <value>       Set the memory requests"
   echo "  -n, --namespace <value>             Set the namespace"
@@ -51,11 +51,11 @@ while [[ $# -gt 0 ]]; do
       initiative="$2"
       shift 2
       ;;
-    --volume-size=*)
+    -v=*|--volume-size=*)
       volume_size="${1#*=}"
       shift
       ;;
-    --volume-size)
+    -v|--volume-size)
       volume_size="$2"
       shift 2
       ;;
