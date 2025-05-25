@@ -11,6 +11,7 @@ requests_memory="${CREATE_POD_IN_K8S_REQUESTS_MEMORY:-}"
 namespace="${CREATE_POD_IN_K8S_NAMESPACE:-}"
 image="${CREATE_POD_IN_K8S_IMAGE:-ubuntu}"
 pod_name="${CREATE_POD_IN_K8S_POD_NAME:-troubleshooter}"
+pod_running_timeout="${CREATE_POD_IN_K8S_POD_RUNNING_TIMEOUT:-5m}"
 dry_run=false
 
 # Function to print usage
@@ -19,15 +20,17 @@ print_usage() {
   echo "Usage: $script_name [options]"
   echo
   echo "Options:"
-  echo "  -i, --initiative <value>         Set the initiative (default: $initiative)"
-  echo "  --volume-size <value>            Set the volume size"
-  echo "  --requests-cpu <value>           Set the CPU requests"
-  echo "  --requests-memory <value>        Set the memory requests"
-  echo "  -n, --namespace <value>          Set the namespace"
-  echo "  --image <value>                  Set the image (default: $image)"
-  echo "  --pod-name <value>               Set the pod name (default: $pod_name)"
-  echo "  --dry-run                        Print the command without executing it"
-  echo "  -h, --help                       Show this help message and exit"
+  echo "  -i, --initiative <value>            Set the initiative (default: $initiative)"
+  echo "  --volume-size <value>               Set the volume size"
+  echo "  --requests-cpu <value>              Set the CPU requests"
+  echo "  --requests-memory <value>           Set the memory requests"
+  echo "  -n, --namespace <value>             Set the namespace"
+  echo "  --image <value>                     Set the image (default: $image)"
+  echo "  --pod-name <value>                  Set the pod name (default: $pod_name)"
+  echo "  -t, --pod-running-timeout <value>   Set the length of time (like 5s, 2m, or 3h) to wait"
+  echo "                                      until at least one pod is running (default: $pod_running_timeout)"
+  echo "  --dry-run                           Print the command without executing it"
+  echo "  -h, --help                          Show this help message and exit"
   echo ""
   echo "Many options can be supplied by env vars (example: CREATE_POD_IN_K8S_POD_NAME)."
   echo "See script source for which ones can be supplied this way."
@@ -96,6 +99,14 @@ while [[ $# -gt 0 ]]; do
       pod_name="$2"
       shift 2
       ;;
+    -t=*|--pod-running-timeout=*)
+      pod_running_timeout="${1#*=}"
+      shift
+      ;;
+    -t|--pod-running-timeout)
+      pod_running_timeout="$2"
+      shift 2
+      ;;
     --dry-run)
       dry_run=true
       shift
@@ -159,6 +170,11 @@ kubectl_command=(
 # Add namespace if supplied
 if [[ -n "$namespace" ]]; then
   kubectl_command+=(-n "$namespace")
+fi
+
+# Add pod running timeout to the kubectl command if supplied
+if [[ -n "$pod_running_timeout" ]]; then
+  kubectl_command+=(--pod-running-timeout="$pod_running_timeout")
 fi
 
 # Add the remaining arguments
