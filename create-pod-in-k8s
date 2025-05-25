@@ -22,8 +22,8 @@ print_usage() {
   echo "Options:"
   echo "  -i, --initiative <value>            Set the initiative (default: $initiative)"
   echo "  --volume-size <value>               Set the volume size"
-  echo "  --requests-cpu <value>              Set the CPU requests"
-  echo "  --requests-memory <value>           Set the memory requests"
+  echo "  -c, --requests-cpu <value>          Set the CPU requests"
+  echo "  -m, --requests-memory <value>       Set the memory requests"
   echo "  -n, --namespace <value>             Set the namespace"
   echo "  --image <value>                     Set the image (default: $image)"
   echo "  --pod-name <value>                  Set the pod name (default: $pod_name)"
@@ -59,19 +59,19 @@ while [[ $# -gt 0 ]]; do
       volume_size="$2"
       shift 2
       ;;
-    --requests-cpu=*)
+    -c=*|--requests-cpu=*)
       requests_cpu="${1#*=}"
       shift
       ;;
-    --requests-cpu)
+    -c|--requests-cpu)
       requests_cpu="$2"
       shift 2
       ;;
-    --requests-memory=*)
+    -m=*|--requests-memory=*)
       requests_memory="${1#*=}"
       shift
       ;;
-    --requests-memory)
+    -m|--requests-memory)
       requests_memory="$2"
       shift 2
       ;;
