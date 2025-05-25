@@ -37,6 +37,7 @@ print_usage() {
 }
 
 # Parse options
+# TODO This is a lot of boilerplate. Consider converting this to a Kotlin script (kts) and using Clikt
 while [[ $# -gt 0 ]]; do
   case $1 in
     -h|--help)
