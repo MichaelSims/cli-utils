@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -e
+
+if [ $# -lt 3 ]; then
+  echo "Usage: $(basename "$0") <STORAGE-ACCOUNT> <CONTAINER> <PATH>"
+  exit 1
+fi
+
+storage_account="$1"
+container="$2"
+path="$3"
+
+az_cmd=(
+  az storage fs file list
+  --auth-mode login
+  --account-name "$storage_account"
+  --file-system "$container"
+  --path "$path"
+  --output tsv
+  --exclude-dir
+)
+
+echo "Executing command: ${az_cmd[*]} | cut -f9 | sort" >&2
+
+"${az_cmd[@]}" | cut -f9 | sort
