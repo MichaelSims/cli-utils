@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# Define excluded branches
+excluded_branches=("origin/HEAD" "origin/main" "origin/legacy")
+
+echo "# Branches by author"
+
+# Get all remote branches
+branches=$(git branch -r | sed 's/->.*$//' | awk '{$1=$1};1')
+
+# Create temporary files
+temp_file=$(mktemp)
+count_file=$(mktemp)
+
+# Process each branch
+echo "$branches" | while read -r branch; do
+    # Check if branch is in excluded list
+    skip=false
+    for excluded in "${excluded_branches[@]}"; do
+        if [[ "$branch" == "$excluded" ]]; then
+            skip=true
+            break
+        fi
+    done
+
+    # Skip excluded branches
+    if [[ "$skip" == true ]]; then
+        continue
+    fi
+
+    # Get author of the branch
+    author=$(git show -s --format="%an <%ae>" "$branch")
+
+    # Add to temporary file in format: author|branch
+    echo "$author|$branch" >> "$temp_file"
+done
+
+# Sort the file by author (case-insensitive)
+sort -f -t '|' -k1,1 "$temp_file" > "${temp_file}.sorted"
+
+# Count branches per author and write to count file
+cut -d '|' -f 1 "${temp_file}.sorted" | uniq -c | while read -r count author; do
+    echo "$author|$count" >> "$count_file"
+done
+
+# Process the sorted file to generate output
+current_author=""
+total_branches=0
+
+while IFS='|' read -r author branch; do
+    if [[ "$author" != "$current_author" ]]; then
+        # Find the count for this author
+        branch_count=$(grep -F "$author|" "$count_file" | cut -d '|' -f 2)
+        echo "## $author ($branch_count branches)"
+        current_author="$author"
+    fi
+    echo "- $branch"
+    ((total_branches++))
+done < "${temp_file}.sorted"
+
+echo "# Total branches"
+echo ""
+echo "$total_branches total branches."
+echo ""
+
+# Clean up temporary files
+rm "$temp_file" "${temp_file}.sorted" "$count_file"
