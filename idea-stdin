@@ -2,7 +2,15 @@
 
 set -e
 
+extension="${1:-txt}"
+
 script_base=$(basename "$0")
-temp_file="$(mktemp -t "$script_base").txt"
+temp_file="$(mktemp -t "$script_base").$extension"
 cat - > "$temp_file"
+
+if [[ ! -s "$temp_file" ]]; then
+  echo "No output was produced."
+  exit 1
+fi
+
 idea "$temp_file"
