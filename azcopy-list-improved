@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -e
+
+azcopy list --machine-readable "$1" | grep -Ev "(Autologin|Authenticating|Length: 0)"
