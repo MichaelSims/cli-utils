@@ -1,0 +1,67 @@
+#!/bin/bash
+set -euo pipefail
+
+# Sync beads issues to a dedicated orphan branch, keeping beads
+# versioning completely separate from code changes.
+#
+# Uses git plumbing only — never touches HEAD, the working directory,
+# or the real index.
+
+BRANCH="beads-sync"
+BEADS_DIR=".beads"
+
+if [ ! -d "$BEADS_DIR" ]; then
+    echo "error: no $BEADS_DIR directory in $(pwd)" >&2
+    exit 1
+fi
+
+# 1. Export database to JSONL
+br sync --flush-only
+
+# 2. Build a tree from the current .beads/ files using a temporary index
+TEMP_INDEX=$(mktemp)
+rm -f "$TEMP_INDEX"  # git needs the file absent so it can initialize it
+trap 'rm -f "$TEMP_INDEX"' EXIT
+
+# Only add files that .beads/.gitignore intends to be tracked.
+# --force is needed to override .git/info/exclude (stealth mode),
+# but we enumerate explicitly to avoid pulling in DB/daemon files
+# that .beads/.gitignore would normally exclude.
+TRACKED_FILES=()
+for f in \
+    "$BEADS_DIR/.gitignore" \
+    "$BEADS_DIR/.jsonl.lock" \
+    "$BEADS_DIR/config.yaml" \
+    "$BEADS_DIR/interactions.jsonl" \
+    "$BEADS_DIR/issues.jsonl" \
+    "$BEADS_DIR/metadata.json" \
+    "$BEADS_DIR/README.md"
+do
+    [ -f "$f" ] && TRACKED_FILES+=("$f")
+done
+
+if [ ${#TRACKED_FILES[@]} -eq 0 ]; then
+    echo "error: no trackable beads files found" >&2
+    exit 1
+fi
+
+GIT_INDEX_FILE="$TEMP_INDEX" git add --force "${TRACKED_FILES[@]}"
+TREE=$(GIT_INDEX_FILE="$TEMP_INDEX" git write-tree)
+
+# 3. Create a commit (with parent if the branch already exists)
+if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
+    PARENT=$(git rev-parse "$BRANCH")
+    OLD_TREE=$(git rev-parse "${BRANCH}^{tree}")
+    if [ "$TREE" = "$OLD_TREE" ]; then
+        echo "No beads changes to commit."
+        exit 0
+    fi
+    COMMIT=$(echo "sync beads" | git commit-tree "$TREE" -p "$PARENT")
+else
+    COMMIT=$(echo "Initial beads sync" | git commit-tree "$TREE")
+fi
+
+# 4. Update the branch ref
+git update-ref "refs/heads/$BRANCH" "$COMMIT"
+
+echo "Beads synced to $BRANCH ($(git rev-parse --short "$COMMIT"))"
