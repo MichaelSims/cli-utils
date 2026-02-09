@@ -1,67 +1,71 @@
 #!/bin/bash
 set -euo pipefail
 
-# Sync beads issues to a dedicated orphan branch, keeping beads
-# versioning completely separate from code changes.
+# Sync beads issues to a central beads-sync repository, with one
+# subdirectory per project (named after the origin remote's repo name).
 #
-# Uses git plumbing only — never touches HEAD, the working directory,
-# or the real index.
+# Local clone lives at ~/.local/share/beads-sync/.
 
-BRANCH="beads-sync"
 BEADS_DIR=".beads"
+SYNC_REPO="$HOME/.local/share/beads-sync"
+REMOTE_REPO="git@github.com:MichaelSims/beads-sync.git"
 
 if [ ! -d "$BEADS_DIR" ]; then
     echo "error: no $BEADS_DIR directory in $(pwd)" >&2
     exit 1
 fi
 
+# Derive project name from origin remote
+ORIGIN_URL=$(git remote get-url origin 2>/dev/null) || {
+    echo "error: no 'origin' remote configured" >&2
+    exit 1
+}
+PROJECT_NAME=$(basename "$ORIGIN_URL" .git)
+
 # 1. Export database to JSONL
 br sync --flush-only
 
-# 2. Build a tree from the current .beads/ files using a temporary index
-TEMP_INDEX=$(mktemp)
-rm -f "$TEMP_INDEX"  # git needs the file absent so it can initialize it
-trap 'rm -f "$TEMP_INDEX"' EXIT
+# 2. Ensure local clone is up to date
+if [ ! -d "$SYNC_REPO" ]; then
+    git clone "$REMOTE_REPO" "$SYNC_REPO"
+else
+    git -C "$SYNC_REPO" pull --ff-only
+fi
 
-# Only add files that .beads/.gitignore intends to be tracked.
-# --force is needed to override .git/info/exclude (stealth mode),
-# but we enumerate explicitly to avoid pulling in DB/daemon files
-# that .beads/.gitignore would normally exclude.
-TRACKED_FILES=()
+# 3. Ensure project subdirectory exists
+PROJECT_DIR="$SYNC_REPO/$PROJECT_NAME"
+mkdir -p "$PROJECT_DIR"
+
+# 4. Copy tracked beads files into the project directory
+COPIED=0
 for f in \
-    "$BEADS_DIR/.gitignore" \
-    "$BEADS_DIR/.jsonl.lock" \
-    "$BEADS_DIR/config.yaml" \
-    "$BEADS_DIR/interactions.jsonl" \
-    "$BEADS_DIR/issues.jsonl" \
-    "$BEADS_DIR/metadata.json" \
-    "$BEADS_DIR/README.md"
+    .gitignore \
+    .jsonl.lock \
+    config.yaml \
+    interactions.jsonl \
+    issues.jsonl \
+    metadata.json \
+    README.md
 do
-    [ -f "$f" ] && TRACKED_FILES+=("$f")
+    if [ -f "$BEADS_DIR/$f" ]; then
+        cp "$BEADS_DIR/$f" "$PROJECT_DIR/$f"
+        COPIED=$((COPIED + 1))
+    fi
 done
 
-if [ ${#TRACKED_FILES[@]} -eq 0 ]; then
+if [ "$COPIED" -eq 0 ]; then
     echo "error: no trackable beads files found" >&2
     exit 1
 fi
 
-GIT_INDEX_FILE="$TEMP_INDEX" git add --force "${TRACKED_FILES[@]}"
-TREE=$(GIT_INDEX_FILE="$TEMP_INDEX" git write-tree)
-
-# 3. Create a commit (with parent if the branch already exists)
-if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
-    PARENT=$(git rev-parse "$BRANCH")
-    OLD_TREE=$(git rev-parse "${BRANCH}^{tree}")
-    if [ "$TREE" = "$OLD_TREE" ]; then
-        echo "No beads changes to commit."
-        exit 0
-    fi
-    COMMIT=$(echo "sync beads" | git commit-tree "$TREE" -p "$PARENT")
-else
-    COMMIT=$(echo "Initial beads sync" | git commit-tree "$TREE")
+# 5. Commit and push if there are changes
+git -C "$SYNC_REPO" add -A
+if git -C "$SYNC_REPO" diff --cached --quiet; then
+    echo "No beads changes to commit."
+    exit 0
 fi
 
-# 4. Update the branch ref
-git update-ref "refs/heads/$BRANCH" "$COMMIT"
+git -C "$SYNC_REPO" commit -m "sync beads: $PROJECT_NAME"
+git -C "$SYNC_REPO" push
 
-echo "Beads synced to $BRANCH ($(git rev-parse --short "$COMMIT"))"
+echo "Beads synced for $PROJECT_NAME to $(git -C "$SYNC_REPO" rev-parse --short HEAD)"
