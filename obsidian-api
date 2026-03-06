@@ -1,0 +1,13 @@
+#!/bin/zsh
+# Wrapper for the Obsidian Local REST API.
+# Requires OBSIDIAN_API_KEY to be set in the environment.
+#
+# Usage:
+#   obsidian-api GET /vault/
+#   obsidian-api GET /periodic/daily/
+#   obsidian-api POST /vault/Notes/foo.md -H "Content-Type: text/markdown" -d 'body'
+
+method="$1"
+path="$2"
+shift 2
+/usr/bin/curl -s -X "$method" -H "Authorization: Bearer $OBSIDIAN_API_KEY" "http://127.0.0.1:27123${path}" "$@"
