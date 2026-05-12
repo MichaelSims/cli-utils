@@ -1,0 +1,197 @@
+#!/usr/bin/env sh
+# # Draw a graphviz diagram of the Git DAG
+#
+# Labels consist of the short SHA1 and any refs.
+# Unreachable commits (ignoring the reflog) will be drawn with dashed lines.
+#
+# ## Usage
+#
+# `git graph-dag [<flags>] [<git refs>] (-- [git rev-list args])`
+#
+# Flag | Description
+# ---- | -----------
+# -h   | Show this screen.
+# -c   | Also output commit message (must be short!).
+# -w   | Watch mode (see below).
+# --   | Pass any args through to git rev-list.
+#
+# With no rev arguments, the entire repo is rendered (equivalent to passing
+# `-- --reflog --all`), matching what watch mode does on each refresh.
+#
+# ## Examples
+#
+#     git graph-dag
+#     git graph-dag HEAD~10..
+#     git graph-dag -c HEAD~10..
+#     git graph-dag HEAD~10.. abcdefa
+#     git graph-dag HEAD~10.. abcdefa abcdefb
+#     git graph-dag -c -- --reflog --all
+#     git graph-dag -w
+#
+#     # Linux & Windows (WSL) w/ ImageMagick
+#     git graph-dag HEAD~10.. | dot -Tpng | display -antialias
+#
+#     # OS X
+#     git graph-dag HEAD~10.. | dot -Tpng | open -a Preview.app -f
+#
+# ## Watch mode
+#
+# Install (then remove) a Git hook that will update a PNG image on every ref
+# change and start the `display` ImageMagick viewer that will watch that file
+# for changes. This is an easy and simple way to view updates to the DAG in
+# real-time as they happen (useful for live demos when teaching Git classes).
+# E.g.:
+#
+# Terminal 1:
+#
+#     git init /path/to/foo
+#     cd /path/to/foo
+#     git graph-dag -w
+#
+# Terminal 2:
+#
+#     cd /path/to/foo
+#     touch A; git add A; git commit -m 'Add-A'
+#     touch B; git add B; git commit -m 'Add-B'
+#     git reset --hard HEAD~1
+#     touch C; git add C; git commit -m 'Add-C'
+#     git commit --amend -o -m 'Add-C-2'
+
+HOOKSCRIPT='.git/hooks/reference-transaction'
+
+GITDIR="$(git rev-parse --absolute-git-dir)"
+test $? -eq 0 || exit 1
+
+IMG="${GITDIR}/graph-dag.png"
+
+run_watch() {
+    command -v dot 1>/dev/null || \
+        { printf 'Graphviz required.\n' 1>&2; exit 1; }
+
+    if [ -e "$HOOKSCRIPT" ]; then
+        printf 'Existing hook found. Not overwriting!\n' 1>&2
+        exit 1
+    fi
+
+    # shellcheck disable=SC2317
+    cleanup() {
+        excode=$?
+        trap - EXIT
+        rm -rf -- "$HOOKSCRIPT" "${IMG}.tmp"
+        exit "$excode"
+    }
+    trap cleanup INT TERM EXIT
+
+    # The reference-transaction hook fires multiple times per ref update
+    # (prepared / committed / aborted), so short-circuit on anything but
+    # "committed" to avoid redundant rewrites and AppleScript activations.
+    # Write to a sibling .tmp and rename into place so watchers never see a
+    # half-written file (atomic rename on the same filesystem).
+    cat >> "$HOOKSCRIPT" <<-EOS
+#!/usr/bin/env sh
+[ "\$1" = committed ] || exit 0
+git graph-dag -c -- --reflog --all | dot -Tpng > "${IMG}.tmp" && mv "${IMG}.tmp" "$IMG"
+EOS
+    chmod +x "$HOOKSCRIPT"
+
+    # Look for existing commits:
+    if git rev-list --quiet --all -n 1 HEAD 2>/dev/null; then
+        git graph-dag -c -- --reflog --all | dot -Tpng > "${IMG}.tmp" && mv "${IMG}.tmp" "$IMG"
+    else
+        # Make blank 200x200 PNG placeholder.
+        cat <<-'EOF' | base64 -d | gzip -d > "$IMG"
+H4sICHoQAWQAA2dyYXBoLWRhZy5wbmcA6wzwc+flkuJiYGDg9fRwCQLSJ0CYgw1Iro1YN4+BgbHV
+08UxpOLW28uMvAwMHMwKb+ffvMukVnCh0U+NdU6UgAALC6OjA4JC57MIogswovMdGQjwHQQI8cmz
+l6BDyLEYwyFk2Ysi0Ngvti1Qxu3VLD1tYLwweLr6uaxzSmgCAISVGHO+AQAA
+EOF
+    fi
+
+    if uname -s | grep -q Darwin; then
+        # Preview only redraws when brought to the foreground, so append an
+        # AppleScript call to the hook that activates Preview after each
+        # rewrite (then refocuses iTerm). Combined with the atomic .tmp +
+        # rename above, this avoids the old "file changed under me" crashes
+        # we used to hit. If Preview ever gets flaky again, the previous
+        # iteration of this script supported a browser-based viewer (HTML
+        # wrapper that polls the PNG with a cache-busting query param) as a
+        # fallback. See git history.
+        printf 'osascript %s\n' \
+            '/Users/michael.sims/.local/bin/update-image.scpt' \
+            >> "$HOOKSCRIPT"
+        open -W -g -a Preview.app "$IMG"
+    else
+        command -v display 1>/dev/null || \
+            { printf 'ImageMagick required.\n' 1>&2; exit 1; }
+
+        display -update 1 -antialias "$IMG"
+    fi
+    exit
+}
+
+main() {
+    while getopts chw opt; do
+        case $opt in
+        c) show_msg=1;;
+        h) show_help=1;;
+        w) run_watch;;
+        *) show_help=1;;
+        esac
+    done
+    shift $(( OPTIND - 1 ))
+
+    if [ -n "$show_help" ] ; then
+        awk 'NR == 1 { next } /^$/ { exit } { print substr($0, 3) }' "$0"
+        exit 1
+    fi
+
+    # No revs given: render the entire repo, matching watch mode's behavior.
+    if [ $# -eq 0 ]; then
+        set -- --reflog --all
+    fi
+
+    {
+        git fsck --unreachable --no-reflogs --no-progress \
+            | awk '/commit/ { print $3 }'
+
+        printf 'XXX\n'
+
+        git rev-list --no-commit-header --pretty=format:'%H|%h|%p|%D|%f' "$@" ;
+    } |
+    awk -v show_msg="$show_msg" '
+
+    BEGIN {
+        FS="|"
+        print "digraph lattice {"
+    }
+
+    /^XXX$/ { revlist = 1; next }
+
+    !revlist { unreachable[$1] = 1 }
+
+    revlist {
+        hashfull = $1
+        hash = $2
+        split($3, parents, " ")
+        refs = $4
+        msg = $5
+
+        sub(" -> ", " -\\&gt; ", refs)
+        unreachable[hashfull] == 1 ? isunr = 1 : isunr = 0
+
+        for (p in parents) {
+            printf("x%s -> x%s\n", hash, parents[p])
+        }
+
+        printf("x%s [shape=Mrecord, style=%s, label=<%s%s%s>]\n",
+            hash, \
+            isunr == 1 ? "dashed" : "filled", \
+            "<b>" hash "</b>",
+            show_msg == 1 ? " <font color=\"gray20\">" msg "</font>" : "", \
+            refs == "" ? "" : "<br/><font color=\"gray20\" point-size=\"10.0\">" refs "</font>")
+    }
+
+    END { printf("}\n") }
+    '
+}
+
+main "$@"
