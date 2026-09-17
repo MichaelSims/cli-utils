@@ -1,13 +1,22 @@
 #!/bin/zsh
 # Wrapper for the Obsidian Local REST API.
-# Requires OBSIDIAN_API_KEY to be set in the environment.
+#
+# Defaults to the personal vault (~/Documents/Obsidian Vault) on port 27123,
+# authenticating with OBSIDIAN_API_KEY from the environment.
+#
+# Override OBSIDIAN_API_PORT and OBSIDIAN_API_KEY to target a different vault.
+# For the Trilliant Relay vault, use the `relay-api` wrapper instead of setting
+# these by hand; it exists as a separate command name so permission rules can
+# treat shared-folder writes differently from personal-vault writes.
 #
 # Usage:
 #   obsidian-api GET /vault/
 #   obsidian-api GET /periodic/daily/
 #   obsidian-api POST /vault/Notes/foo.md -H "Content-Type: text/markdown" -d 'body'
 
+port="${OBSIDIAN_API_PORT:-27123}"
+
 method="$1"
 path="$2"
 shift 2
-/usr/bin/curl -s -X "$method" -H "Authorization: Bearer $OBSIDIAN_API_KEY" "http://127.0.0.1:27123${path}" "$@"
+/usr/bin/curl -s -X "$method" -H "Authorization: Bearer $OBSIDIAN_API_KEY" "http://127.0.0.1:${port}${path}" "$@"
