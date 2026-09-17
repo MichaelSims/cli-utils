@@ -1,0 +1,32 @@
+#!/bin/zsh
+# Obsidian Local REST API wrapper for the Trilliant Relay vault (port 27125).
+#
+# Relay folders (ml-collab, product-dev) sync to the whole company in real time
+# and are snapshotted to an internal git repo every ~10 seconds, so a mistaken
+# write there is immediately visible and effectively permanent.
+#
+# The control that matters is an off switch, not a filter: the Local REST API
+# plugin in the trilliant-relay vault is normally DISABLED. Enable it in
+# Obsidian only while you want writes happening, then switch it back off. A
+# closed server cannot be reopened from a script, whereas any rule that matches
+# on command text can be sidestepped by indirection.
+#
+# Exists as a separate command name from `obsidian-api` so permission rules can
+# treat shared-folder writes differently from personal-vault writes.
+#
+# Reading Relay content needs none of this: the files are plain markdown on
+# disk. Only writes come through here, because Relay tracks changes through
+# Obsidian and out-of-band filesystem writes risk sync conflicts for the team.
+#
+# Usage:
+#   relay-api GET /vault/
+#   relay-api PUT /vault/product-dev/... -H "Content-Type: text/markdown" -d 'body'
+
+if [[ -z "$RELAY_OBSIDIAN_API_KEY" ]]; then
+  print -u2 "relay-api: RELAY_OBSIDIAN_API_KEY is not set."
+  print -u2 "Expected in the shell profile alongside OBSIDIAN_API_KEY."
+  exit 64
+fi
+
+exec env OBSIDIAN_API_PORT=27125 OBSIDIAN_API_KEY="$RELAY_OBSIDIAN_API_KEY" \
+  obsidian-api "$@"
