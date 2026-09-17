@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Export beads as a markdown document with a mermaid dependency graph
+# and per-item descriptions.
+# Usage: beads-export-md [--parent <bead-id>] [output-file]
+# Without --parent, exports all open beads.
+# With --parent, exports all beads (open and closed) that are
+# children of the given bead or connected to it via dependencies.
+
+exec python3 - "$@" << 'PYEOF'
+import json, subprocess, sys
+
+parent_id = None
+output = None
+args = sys.argv[1:]
+while args:
+    if args[0] == "--parent" and len(args) > 1:
+        parent_id = args[1]
+        args = args[2:]
+    else:
+        output = args[0]
+        args = args[1:]
+
+if parent_id:
+    open_beads = json.loads(subprocess.check_output(["br", "list", "--status=open", "--format=json"]))
+    closed_beads = json.loads(subprocess.check_output(["br", "list", "--status=closed", "--format=json"]))
+    all_beads = open_beads + closed_beads
+else:
+    all_beads = json.loads(subprocess.check_output(["br", "list", "--status=open", "--format=json"]))
+
+if not all_beads:
+    print("No beads.")
+    sys.exit(0)
+
+by_id = {b["id"]: b for b in all_beads}
+
+deps = {}
+all_edges = {}
+dependents = {}
+for b in all_beads:
+    bid = b["id"]
+    result = subprocess.run(["br", "dep", "list", bid], capture_output=True, text=True)
+    blockers = []
+    all_related = []
+    for line in result.stdout.strip().splitlines():
+        line = line.strip()
+        if line.startswith("-> "):
+            dep_id = line.replace("-> ", "").split(" ")[0]
+            if dep_id in by_id:
+                all_related.append(dep_id)
+                if "(blocks)" in line:
+                    blockers.append(dep_id)
+    deps[bid] = blockers
+    all_edges[bid] = all_related
+    for dep in all_related:
+        dependents.setdefault(dep, []).append(bid)
+
+if parent_id:
+    # Walk the tree from the parent to find all connected beads
+    connected = set()
+    def walk(bid):
+        if bid in connected:
+            return
+        connected.add(bid)
+        for dep in all_edges.get(bid, []):
+            walk(dep)
+        for dep in dependents.get(bid, []):
+            walk(dep)
+    walk(parent_id)
+    beads = [b for b in all_beads if b["id"] in connected]
+    by_id = {b["id"]: b for b in beads}
+    deps = {bid: [d for d in ds if d in by_id] for (bid, ds) in deps.items() if bid in by_id}
+else:
+    beads = all_beads
+
+ordered = []
+visited = set()
+def visit(bid):
+    if bid in visited:
+        return
+    visited.add(bid)
+    for dep in deps.get(bid, []):
+        visit(dep)
+    ordered.append(bid)
+for b in beads:
+    visit(b["id"])
+
+def status_label(b):
+    s = b["status"]
+    if s == "closed":
+        return "done"
+    if s == "in_progress":
+        return "in progress"
+    if deps.get(b["id"]):
+        return "blocked"
+    return "ready"
+
+def short_title(b, max_len=60):
+    t = b["title"]
+    if len(t) <= max_len:
+        return t
+    return t[:max_len - 3] + "..."
+
+has_blocker_edge = set()
+for bid in ordered:
+    for dep in deps.get(bid, []):
+        has_blocker_edge.add(bid)
+        has_blocker_edge.add(dep)
+
+graph_ids = [bid for bid in ordered if bid in has_blocker_edge]
+orphan_ids = [bid for bid in ordered if bid not in has_blocker_edge]
+
+lines = []
+
+# Promote a single orphan with dependents as the section title
+root_ids = [bid for bid in orphan_ids if dependents.get(bid)]
+if len(root_ids) == 1:
+    lines.append("## " + by_id[root_ids[0]]["title"])
+    lines.append("")
+
+if graph_ids:
+    lines.append("### Dependency Graph")
+    lines.append("")
+    lines.append("```mermaid")
+    lines.append("graph TD")
+
+    for bid in graph_ids:
+        b = by_id[bid]
+        label = short_title(b)
+        status = status_label(b)
+        node_label = label + " - " + status
+        lines.append("    " + bid + "[" + '"' + node_label + '"' + "]")
+
+    for bid in graph_ids:
+        for dep in deps.get(bid, []):
+            lines.append("    " + dep + " --> " + bid)
+
+    for bid in graph_ids:
+        b = by_id[bid]
+        status = status_label(b)
+        if status == "ready":
+            lines.append("    style " + bid + " fill:#2d6a4f,color:#fff")
+        elif status == "done":
+            lines.append("    style " + bid + " fill:#555,color:#ccc,stroke:#777")
+
+    lines.append("```")
+    lines.append("")
+
+lines.append("### Work Items")
+lines.append("")
+
+for bid in ordered:
+    b = by_id[bid]
+    blocked = deps.get(bid, [])
+    title = b["title"]
+    itype = b["issue_type"]
+    prio = b["priority"]
+    status = status_label(b)
+
+    lines.append("### " + title)
+    lines.append("**" + bid + "** | " + itype + " | P" + str(prio) + " | " + status)
+    if blocked:
+        parts = []
+        for d in blocked:
+            if d in by_id:
+                parts.append("[[#" + by_id[d]["title"] + "|" + d + "]]")
+        lines.append("Blocked by: " + ", ".join(parts))
+    lines.append("")
+    lines.append(b["description"])
+    lines.append("")
+
+text = "\n".join(lines)
+
+if output:
+    with open(output, "w") as f:
+        f.write(text)
+    print("Exported to " + output, file=sys.stderr)
+else:
+    print(text)
+PYEOF
